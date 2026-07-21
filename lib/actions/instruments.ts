@@ -1,14 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-
-async function requireSession() {
-  const session = await auth();
-  if (!session?.user) throw new Error("Not authenticated");
-  return session;
-}
+import { requireSession } from "@/lib/session";
 
 export async function createInstrument(formData: FormData) {
   await requireSession();

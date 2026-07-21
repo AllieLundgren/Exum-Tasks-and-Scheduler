@@ -1,15 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { requireSession } from "@/lib/session";
 import type { TimeBlockCategory } from "@/lib/generated/prisma/client";
-
-async function requireSession() {
-  const session = await auth();
-  if (!session?.user?.id) throw new Error("Not authenticated");
-  return session;
-}
 
 export async function createTimeBlock(input: {
   instrumentId: string;
@@ -17,20 +11,25 @@ export async function createTimeBlock(input: {
   startsAt: string;
   endsAt: string;
   notes?: string;
+  taskId?: string;
+  subtaskId?: string;
 }) {
   const session = await requireSession();
 
   await prisma.timeBlock.create({
     data: {
       instrumentId: input.instrumentId,
-      userId: session.user!.id!,
+      userId: session.user.id,
       category: input.category,
       startsAt: new Date(input.startsAt),
       endsAt: new Date(input.endsAt),
       notes: input.notes || null,
+      taskId: input.taskId || null,
+      subtaskId: input.subtaskId || null,
     },
   });
   revalidatePath(`/instruments/${input.instrumentId}`);
+  if (input.taskId) revalidatePath(`/tasks/${input.taskId}`);
 }
 
 export async function updateTimeBlock(input: {
@@ -40,6 +39,7 @@ export async function updateTimeBlock(input: {
   startsAt: string;
   endsAt: string;
   notes?: string;
+  taskId?: string;
 }) {
   await requireSession();
 
@@ -53,10 +53,12 @@ export async function updateTimeBlock(input: {
     },
   });
   revalidatePath(`/instruments/${input.instrumentId}`);
+  if (input.taskId) revalidatePath(`/tasks/${input.taskId}`);
 }
 
-export async function deleteTimeBlock(id: string, instrumentId: string) {
+export async function deleteTimeBlock(id: string, instrumentId: string, taskId?: string) {
   await requireSession();
   await prisma.timeBlock.delete({ where: { id } });
   revalidatePath(`/instruments/${instrumentId}`);
+  if (taskId) revalidatePath(`/tasks/${taskId}`);
 }
