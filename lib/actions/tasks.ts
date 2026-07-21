@@ -147,6 +147,19 @@ export async function setDemoSubtaskStatus(taskId: string, subtaskId: string, st
   revalidateTaskPaths(taskId);
 }
 
+export async function deleteTask(taskId: string) {
+  const session = await requireSession();
+  const task = await prisma.task.findUnique({ where: { id: taskId }, select: { createdById: true } });
+  if (!task) throw new Error("Task not found");
+  if (task.createdById !== session.user.id) {
+    throw new Error("Only the task creator can delete this task");
+  }
+  await prisma.task.delete({ where: { id: taskId } });
+  revalidatePath("/tasks");
+  revalidatePath("/tasks/my");
+  redirect("/tasks");
+}
+
 export async function acceptAllAssignedSubtasks(taskId: string) {
   const session = await requireSession();
   await prisma.demoSubtask.updateMany({

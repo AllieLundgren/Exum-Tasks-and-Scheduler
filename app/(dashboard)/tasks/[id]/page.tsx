@@ -6,6 +6,7 @@ import { TaskStatusControls } from "@/components/tasks/task-status-controls";
 import { AcceptAllButton } from "@/components/tasks/accept-all-button";
 import { BookInstrumentTimeDialog } from "@/components/tasks/book-instrument-time-dialog";
 import { LinkedTimeBlocks } from "@/components/tasks/linked-time-blocks";
+import { DeleteTaskButton } from "@/components/tasks/delete-task-button";
 import {
   assignDemoSubtask,
   respondToDemoSubtask,
@@ -61,17 +62,20 @@ export default async function TaskDetailPage({
 
   return (
     <div className="max-w-2xl space-y-6">
-      <div>
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">
-          {task.kind === "demo" ? "Demo" : BLANK_CATEGORY_LABELS[task.category ?? ""]}
-        </p>
-        <h1 className="text-2xl font-semibold">{task.title}</h1>
-        {task.description && (
-          <p className="mt-1 text-sm text-muted-foreground">{task.description}</p>
-        )}
-        <p className="mt-1 text-xs text-muted-foreground">
-          Created by {task.createdBy.name ?? "Unknown"}
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+            {task.kind === "demo" ? "Demo" : BLANK_CATEGORY_LABELS[task.category ?? ""]}
+          </p>
+          <h1 className="text-2xl font-semibold">{task.title}</h1>
+          {task.description && (
+            <p className="mt-1 text-sm text-muted-foreground">{task.description}</p>
+          )}
+          <p className="mt-1 text-xs text-muted-foreground">
+            Created by {task.createdBy.name ?? "Unknown"}
+          </p>
+        </div>
+        {task.createdById === session.user.id && <DeleteTaskButton taskId={task.id} />}
       </div>
 
       {task.kind === "demo" ? (
