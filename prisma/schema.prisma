@@ -1,0 +1,192 @@
+// Prisma schema for the mass spec instrument scheduling & task tracker.
+// See the approved plan for the full data model rationale.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------- Auth.js (NextAuth) required models ----------
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ---------- Core domain ----------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
+
+  accounts Account[]
+  sessions Session[]
+
+  timeBlocks         TimeBlock[]
+  createdTasks       Task[]        @relation("TaskCreatedBy")
+  assignedTasks      Task[]        @relation("TaskAssignedTo")
+  assignedDemoStages DemoSubtask[] @relation("DemoSubtaskAssignedTo")
+}
+
+model Instrument {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  timeBlocks TimeBlock[]
+}
+
+model BusinessHoursConfig {
+  id        String  @id @default(cuid())
+  dayOfWeek Int // 0 (Sunday) - 6 (Saturday)
+  startTime String // "09:00"
+  endTime   String // "24:00"
+  isActive  Boolean @default(true)
+
+  @@unique([dayOfWeek])
+}
+
+enum TimeBlockCategory {
+  personal_usage
+  demo
+  maintenance
+  applications
+  customer_visit
+  other
+}
+
+model TimeBlock {
+  id           String            @id @default(cuid())
+  instrument   Instrument        @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  instrumentId String
+  user         User              @relation(fields: [userId], references: [id])
+  userId       String
+  category     TimeBlockCategory
+  startsAt     DateTime
+  endsAt       DateTime
+  notes        String?
+
+  task      Task?        @relation(fields: [taskId], references: [id])
+  taskId    String?
+  subtask   DemoSubtask? @relation(fields: [subtaskId], references: [id])
+  subtaskId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([instrumentId, startsAt])
+}
+
+enum TaskKind {
+  demo
+  blank
+}
+
+enum TaskStatus {
+  unassigned
+  assigned
+  in_progress
+  done
+}
+
+enum BlankTaskCategory {
+  maintenance
+  applications
+  customer_visit
+  other
+}
+
+model Task {
+  id          String             @id @default(cuid())
+  kind        TaskKind
+  title       String
+  description String?
+  category    BlankTaskCategory? // only set when kind = blank
+  status      TaskStatus         @default(unassigned) // only meaningful when kind = blank
+
+  createdBy    User    @relation("TaskCreatedBy", fields: [createdById], references: [id])
+  createdById  String
+  assignedTo   User?   @relation("TaskAssignedTo", fields: [assignedToId], references: [id])
+  assignedToId String? // only set when kind = blank
+
+  subtasks   DemoSubtask[]
+  timeBlocks TimeBlock[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum DemoStageType {
+  sample_prep
+  data_collection
+  data_processing
+}
+
+enum DemoSubstageType {
+  mapping
+  depth_profiling
+  three_d_modeling
+  quantitation
+  qualitative_analysis
+}
+
+model DemoSubtask {
+  id           String            @id @default(cuid())
+  task         Task              @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId       String
+  stageType    DemoStageType
+  substageType DemoSubstageType?
+  orderIndex   Int
+  status       TaskStatus        @default(unassigned)
+
+  assignedTo   User?   @relation("DemoSubtaskAssignedTo", fields: [assignedToId], references: [id])
+  assignedToId String?
+
+  timeBlocks TimeBlock[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([taskId, stageType, substageType])
+}
