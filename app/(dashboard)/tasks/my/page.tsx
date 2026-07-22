@@ -9,8 +9,8 @@ import {
   BLANK_CATEGORY_LABELS,
   deriveDemoStatus,
   demoProgressLabel,
+  groupDemoSubtasksByTask,
 } from "@/lib/task-helpers";
-import type { TaskStatus } from "@/lib/generated/prisma/client";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -21,25 +21,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-type DemoSubtaskWithTask = {
-  id: string;
-  taskId: string;
-  stageType: string;
-  substageType: string | null;
-  status: TaskStatus;
-  task: { title: string };
-};
-
-function groupByTask(subtasks: DemoSubtaskWithTask[]) {
-  const map = new Map<string, { taskId: string; title: string; stages: DemoSubtaskWithTask[] }>();
-  for (const s of subtasks) {
-    const existing = map.get(s.taskId);
-    if (existing) existing.stages.push(s);
-    else map.set(s.taskId, { taskId: s.taskId, title: s.task.title, stages: [s] });
-  }
-  return [...map.values()];
-}
-
 function StatusBucket({
   blankItems,
   demoGroups,
@@ -48,7 +29,7 @@ function StatusBucket({
   emptyText,
 }: {
   blankItems: { id: string; title: string; category: string | null }[];
-  demoGroups: ReturnType<typeof groupByTask>;
+  demoGroups: ReturnType<typeof groupDemoSubtasksByTask>;
   badgeLabel: string;
   badgeVariant: "default" | "secondary";
   emptyText: string;
@@ -103,12 +84,12 @@ export default async function MyTasksPage() {
   ]);
 
   const needsResponseBlank = blankAssignedToMe.filter((t) => t.status === "assigned");
-  const needsResponseDemo = groupByTask(
+  const needsResponseDemo = groupDemoSubtasksByTask(
     demoSubtasksAssignedToMe.filter((s) => s.status === "assigned"),
   );
 
   const inProgressBlank = blankAssignedToMe.filter((t) => t.status === "in_progress");
-  const inProgressDemo = groupByTask(
+  const inProgressDemo = groupDemoSubtasksByTask(
     demoSubtasksAssignedToMe.filter((s) => s.status === "in_progress"),
   );
 

@@ -51,6 +51,25 @@ export const INSTRUMENT_RELEVANT_BLANK_CATEGORIES = new Set([
   "customer_visit",
 ]);
 
+export type DemoSubtaskWithTask = {
+  id: string;
+  taskId: string;
+  stageType: string;
+  substageType: string | null;
+  status: TaskStatus;
+  task: { title: string };
+};
+
+export function groupDemoSubtasksByTask(subtasks: DemoSubtaskWithTask[]) {
+  const map = new Map<string, { taskId: string; title: string; stages: DemoSubtaskWithTask[] }>();
+  for (const s of subtasks) {
+    const existing = map.get(s.taskId);
+    if (existing) existing.stages.push(s);
+    else map.set(s.taskId, { taskId: s.taskId, title: s.task.title, stages: [s] });
+  }
+  return [...map.values()];
+}
+
 export function deriveDemoStatus(subtasks: { status: TaskStatus }[]): TaskStatus {
   if (subtasks.length > 0 && subtasks.every((s) => s.status === "done")) return "done";
   if (subtasks.some((s) => s.status === "in_progress" || s.status === "done")) return "in_progress";
