@@ -29,20 +29,16 @@ export default async function AnalyticsPage({
     : startOfNextMonth(now);
 
   const instruments = await prisma.instrument.findMany({
-    where: { isActive: true },
+    where: { status: { not: "no_longer_in_use" } },
     orderBy: { name: "asc" },
   });
 
-  const overall = await computeUsageBreakdown(
-    instruments.map((i) => i.id),
-    rangeStart,
-    rangeEnd,
-  );
+  const overall = await computeUsageBreakdown(instruments, rangeStart, rangeEnd);
 
   const perInstrument = await Promise.all(
     instruments.map(async (instrument) => ({
       instrument,
-      breakdown: await computeUsageBreakdown([instrument.id], rangeStart, rangeEnd),
+      breakdown: await computeUsageBreakdown([instrument], rangeStart, rangeEnd),
     })),
   );
 
@@ -58,7 +54,7 @@ export default async function AnalyticsPage({
 
       {instruments.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No active instruments yet — add one to start tracking usage.
+          No instruments to track yet — add one to start tracking usage.
         </p>
       ) : (
         <>

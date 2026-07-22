@@ -50,7 +50,7 @@ export default async function TaskDetailPage({
   const [users, instruments] = await Promise.all([
     prisma.user.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.instrument.findMany({
-      where: { isActive: true },
+      where: { status: { not: "no_longer_in_use" } },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),

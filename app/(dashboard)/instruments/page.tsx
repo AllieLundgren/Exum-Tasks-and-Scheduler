@@ -3,7 +3,8 @@ import { prisma } from "@/lib/db";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InstrumentDialog } from "@/components/instruments/instrument-dialog";
-import { InstrumentActiveToggle } from "@/components/instruments/instrument-active-toggle";
+import { InstrumentStatusSelect } from "@/components/instruments/instrument-status-select";
+import { INSTRUMENT_STATUS_LABELS, INSTRUMENT_STATUS_BADGE_VARIANT } from "@/lib/instrument-helpers";
 
 export default async function InstrumentsPage() {
   const instruments = await prisma.instrument.findMany({
@@ -34,8 +35,8 @@ export default async function InstrumentsPage() {
                     </p>
                   )}
                 </div>
-                <Badge variant={instrument.isActive ? "default" : "secondary"}>
-                  {instrument.isActive ? "Active" : "Inactive"}
+                <Badge variant={INSTRUMENT_STATUS_BADGE_VARIANT[instrument.status]}>
+                  {INSTRUMENT_STATUS_LABELS[instrument.status]}
                 </Badge>
               </CardHeader>
               <CardContent className="flex items-center gap-2">
@@ -53,7 +54,7 @@ export default async function InstrumentsPage() {
                       description: instrument.description,
                     }}
                   />
-                  <InstrumentActiveToggle id={instrument.id} isActive={instrument.isActive} />
+                  <InstrumentStatusSelect id={instrument.id} status={instrument.status} />
                 </div>
               </CardContent>
             </Card>

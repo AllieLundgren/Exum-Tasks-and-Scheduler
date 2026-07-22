@@ -6,14 +6,14 @@ import type { UsageBreakdown } from "@/lib/business-hours";
 
 const COLORS = {
   Usage: "#2563eb",
-  Maintenance: "#dc2626",
+  "Maintenance Required": "#f59e0b",
   Downtime: "#d1d5db",
 };
 
 export function UsagePieChart({ title, breakdown }: { title: string; breakdown: UsageBreakdown }) {
   const data = [
     { name: "Usage", value: Math.round(breakdown.usageMinutes) },
-    { name: "Maintenance", value: Math.round(breakdown.maintenanceMinutes) },
+    { name: "Maintenance Required", value: Math.round(breakdown.maintenanceRequiredMinutes) },
     { name: "Downtime", value: Math.round(breakdown.downtimeMinutes) },
   ].filter((d) => d.value > 0);
 

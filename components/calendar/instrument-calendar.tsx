@@ -65,9 +65,11 @@ type DialogState =
 export function InstrumentCalendar({
   instrumentId,
   timeBlocks,
+  maintenanceRequiredSince,
 }: {
   instrumentId: string;
   timeBlocks: TimeBlockEvent[];
+  maintenanceRequiredSince?: string | null;
 }) {
   const router = useRouter();
   const [dialogState, setDialogState] = useState<DialogState | null>(null);
@@ -75,19 +77,32 @@ export function InstrumentCalendar({
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const events = useMemo(
-    () =>
-      timeBlocks.map((tb) => ({
-        id: tb.id,
-        title: `${CATEGORY_LABELS[tb.category]}${tb.userName ? ` — ${tb.userName}` : ""}`,
-        start: tb.startsAt,
-        end: tb.endsAt,
-        backgroundColor: CATEGORY_COLORS[tb.category],
-        borderColor: CATEGORY_COLORS[tb.category],
-        extendedProps: { category: tb.category, notes: tb.notes },
-      })),
-    [timeBlocks],
-  );
+  const events = useMemo(() => {
+    const bookedEvents = timeBlocks.map((tb) => ({
+      id: tb.id,
+      title: `${CATEGORY_LABELS[tb.category]}${tb.userName ? ` — ${tb.userName}` : ""}`,
+      start: tb.startsAt,
+      end: tb.endsAt,
+      backgroundColor: CATEGORY_COLORS[tb.category],
+      borderColor: CATEGORY_COLORS[tb.category],
+      extendedProps: { category: tb.category, notes: tb.notes },
+    }));
+
+    if (!maintenanceRequiredSince) return bookedEvents;
+
+    return [
+      ...bookedEvents,
+      {
+        display: "background" as const,
+        daysOfWeek: [1, 2, 3, 4, 5],
+        startTime: "09:00",
+        endTime: "24:00",
+        startRecur: maintenanceRequiredSince,
+        backgroundColor: "#dc2626",
+        title: "Maintenance Required",
+      },
+    ];
+  }, [timeBlocks, maintenanceRequiredSince]);
 
   function handleSelect(info: DateSelectArg) {
     setCategory("personal_usage");

@@ -67,12 +67,19 @@ model User {
   assignedDemoStages DemoSubtask[] @relation("DemoSubtaskAssignedTo")
 }
 
+enum InstrumentStatus {
+  active
+  maintenance_required
+  no_longer_in_use
+}
+
 model Instrument {
-  id          String   @id @default(cuid())
+  id          String           @id @default(cuid())
   name        String
   description String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  status      InstrumentStatus @default(active)
+  statusSince DateTime         @default(now())
+  createdAt   DateTime         @default(now())
 
   timeBlocks TimeBlock[]
 }

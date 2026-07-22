@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/session";
+import type { InstrumentStatus } from "@/lib/generated/prisma/client";
 
 export async function createInstrument(formData: FormData) {
   await requireSession();
@@ -31,8 +32,12 @@ export async function updateInstrument(formData: FormData) {
   revalidatePath("/instruments");
 }
 
-export async function setInstrumentActive(id: string, isActive: boolean) {
+export async function setInstrumentStatus(id: string, status: InstrumentStatus) {
   await requireSession();
-  await prisma.instrument.update({ where: { id }, data: { isActive } });
+  const current = await prisma.instrument.findUnique({ where: { id }, select: { status: true } });
+  if (!current || current.status === status) return;
+  await prisma.instrument.update({ where: { id }, data: { status, statusSince: new Date() } });
   revalidatePath("/instruments");
+  revalidatePath(`/instruments/${id}`);
+  revalidatePath("/analytics");
 }
