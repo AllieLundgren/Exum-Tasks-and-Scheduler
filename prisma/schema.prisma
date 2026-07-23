@@ -81,7 +81,21 @@ model Instrument {
   statusSince DateTime         @default(now())
   createdAt   DateTime         @default(now())
 
-  timeBlocks TimeBlock[]
+  timeBlocks   TimeBlock[]
+  statusEvents InstrumentStatusEvent[]
+}
+
+// Full history of status changes, so analytics can reconstruct exactly which
+// windows were flagged maintenance_required even after the status changes again —
+// Instrument.status/statusSince alone only reflect the current state.
+model InstrumentStatusEvent {
+  id           String           @id @default(cuid())
+  instrument   Instrument       @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  instrumentId String
+  status       InstrumentStatus
+  startedAt    DateTime         @default(now())
+
+  @@index([instrumentId, startedAt])
 }
 
 model BusinessHoursConfig {

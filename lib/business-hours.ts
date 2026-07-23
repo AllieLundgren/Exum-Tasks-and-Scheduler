@@ -10,9 +10,9 @@ export type UsageBreakdown = {
 
 export type InstrumentForAnalytics = {
   id: string;
-  status: InstrumentStatus;
-  statusSince: Date;
 };
+
+type BusinessHoursByDay = Map<number, { start: number; end: number }>;
 
 function toMinutesSinceMidnight(hhmm: string): number {
   const [h, m] = hhmm.split(":").map(Number);
@@ -40,10 +40,10 @@ export async function ensureDefaultBusinessHours() {
   });
 }
 
-async function getActiveBusinessHoursByDay() {
+async function getActiveBusinessHoursByDay(): Promise<BusinessHoursByDay> {
   await ensureDefaultBusinessHours();
   const rows = await prisma.businessHoursConfig.findMany({ where: { isActive: true } });
-  const byDay = new Map<number, { start: number; end: number }>();
+  const byDay: BusinessHoursByDay = new Map();
   for (const row of rows) {
     byDay.set(row.dayOfWeek, {
       start: toMinutesSinceMidnight(row.startTime),
@@ -55,11 +55,7 @@ async function getActiveBusinessHoursByDay() {
 
 // Sums business-hours minutes that fall inside [start, end), clipping each day's
 // window at both the business-hours boundaries and the requested range.
-function businessMinutesInRange(
-  start: Date,
-  end: Date,
-  businessByDay: Map<number, { start: number; end: number }>,
-): number {
+function businessMinutesInRange(start: Date, end: Date, businessByDay: BusinessHoursByDay): number {
   let total = 0;
   for (let d = atStartOfDay(start); d < end; d.setDate(d.getDate() + 1)) {
     const cfg = businessByDay.get(d.getDay());
@@ -78,11 +74,59 @@ function businessMinutesInRange(
   return total;
 }
 
+function usageMinutesInInterval(
+  blocks: { startsAt: Date; endsAt: Date }[],
+  intervalStart: Date,
+  intervalEnd: Date,
+  businessByDay: BusinessHoursByDay,
+): number {
+  let total = 0;
+  for (const block of blocks) {
+    const clippedStart = block.startsAt < intervalStart ? intervalStart : block.startsAt;
+    const clippedEnd = block.endsAt > intervalEnd ? intervalEnd : block.endsAt;
+    if (clippedStart < clippedEnd) total += businessMinutesInRange(clippedStart, clippedEnd, businessByDay);
+  }
+  return total;
+}
+
+// Replays an instrument's status history to reconstruct exactly which status was
+// in effect at every point within [rangeStart, rangeEnd) — a flag-then-unflag
+// cycle within the range produces its own maintenance_required interval, rather
+// than only ever reflecting whatever the *current* status happens to be.
+function reconstructStatusIntervals(
+  events: { status: InstrumentStatus; startedAt: Date }[],
+  rangeStart: Date,
+  rangeEnd: Date,
+): { status: InstrumentStatus; start: Date; end: Date }[] {
+  const sorted = [...events].sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime());
+
+  let statusAtRangeStart: InstrumentStatus = "active";
+  for (const ev of sorted) {
+    if (ev.startedAt > rangeStart) break;
+    statusAtRangeStart = ev.status;
+  }
+
+  const eventsWithinRange = sorted.filter((ev) => ev.startedAt > rangeStart && ev.startedAt < rangeEnd);
+
+  const intervals: { status: InstrumentStatus; start: Date; end: Date }[] = [];
+  let cursor = rangeStart;
+  let currentStatus = statusAtRangeStart;
+  for (const ev of eventsWithinRange) {
+    intervals.push({ status: currentStatus, start: cursor, end: ev.startedAt });
+    cursor = ev.startedAt;
+    currentStatus = ev.status;
+  }
+  intervals.push({ status: currentStatus, start: cursor, end: rangeEnd });
+  return intervals;
+}
+
 // Usage = any actual booked time (any category, including maintenance work — the
 // machine isn't idle while someone's in there). Maintenance Required = business
-// hours since the instrument was flagged that AREN'T already covered by a booking
-// (so a tech booking real repair time during the flagged window counts as Usage,
-// not as still-idle-and-blocked). Downtime is whatever's left.
+// hours during a maintenance_required window that AREN'T already covered by a
+// booking (so a tech booking real repair time during the flagged window counts as
+// Usage, not as still-idle-and-blocked). This is computed per flagged interval
+// from the instrument's full status history, so it stays correct even after the
+// status is later changed back. Downtime is whatever's left.
 export async function computeUsageBreakdown(
   instruments: InstrumentForAnalytics[],
   rangeStart: Date,
@@ -94,20 +138,35 @@ export async function computeUsageBreakdown(
     return { usageMinutes: 0, maintenanceRequiredMinutes: 0, downtimeMinutes: 0, businessMinutes: 0 };
   }
 
-  const blocks = await prisma.timeBlock.findMany({
-    where: {
-      instrumentId: { in: instruments.map((i) => i.id) },
-      startsAt: { lt: rangeEnd },
-      endsAt: { gt: rangeStart },
-    },
-    select: { instrumentId: true, startsAt: true, endsAt: true },
-  });
+  const instrumentIds = instruments.map((i) => i.id);
+
+  const [blocks, statusEvents] = await Promise.all([
+    prisma.timeBlock.findMany({
+      where: {
+        instrumentId: { in: instrumentIds },
+        startsAt: { lt: rangeEnd },
+        endsAt: { gt: rangeStart },
+      },
+      select: { instrumentId: true, startsAt: true, endsAt: true },
+    }),
+    prisma.instrumentStatusEvent.findMany({
+      where: { instrumentId: { in: instrumentIds }, startedAt: { lt: rangeEnd } },
+      select: { instrumentId: true, status: true, startedAt: true },
+    }),
+  ]);
 
   const blocksByInstrument = new Map<string, typeof blocks>();
   for (const block of blocks) {
     const arr = blocksByInstrument.get(block.instrumentId);
     if (arr) arr.push(block);
     else blocksByInstrument.set(block.instrumentId, [block]);
+  }
+
+  const eventsByInstrument = new Map<string, typeof statusEvents>();
+  for (const ev of statusEvents) {
+    const arr = eventsByInstrument.get(ev.instrumentId);
+    if (arr) arr.push(ev);
+    else eventsByInstrument.set(ev.instrumentId, [ev]);
   }
 
   let totalUsage = 0;
@@ -117,37 +176,20 @@ export async function computeUsageBreakdown(
   for (const instrument of instruments) {
     totalBusiness += businessMinutesInRange(rangeStart, rangeEnd, businessByDay);
 
-    const flaggedStart =
-      instrument.status === "maintenance_required"
-        ? instrument.statusSince > rangeStart
-          ? instrument.statusSince
-          : rangeStart
-        : null;
+    const instrumentBlocks = blocksByInstrument.get(instrument.id) ?? [];
+    totalUsage += usageMinutesInInterval(instrumentBlocks, rangeStart, rangeEnd, businessByDay);
 
-    let usageMinutes = 0;
-    let usageMinutesDuringFlagged = 0;
-
-    for (const block of blocksByInstrument.get(instrument.id) ?? []) {
-      const clippedStart = block.startsAt < rangeStart ? rangeStart : block.startsAt;
-      const clippedEnd = block.endsAt > rangeEnd ? rangeEnd : block.endsAt;
-      usageMinutes += businessMinutesInRange(clippedStart, clippedEnd, businessByDay);
-
-      if (flaggedStart) {
-        const overlapStart = clippedStart < flaggedStart ? flaggedStart : clippedStart;
-        if (overlapStart < clippedEnd) {
-          usageMinutesDuringFlagged += businessMinutesInRange(overlapStart, clippedEnd, businessByDay);
-        }
-      }
+    const intervals = reconstructStatusIntervals(
+      eventsByInstrument.get(instrument.id) ?? [],
+      rangeStart,
+      rangeEnd,
+    );
+    for (const interval of intervals) {
+      if (interval.status !== "maintenance_required") continue;
+      const windowMinutes = businessMinutesInRange(interval.start, interval.end, businessByDay);
+      const bookedMinutes = usageMinutesInInterval(instrumentBlocks, interval.start, interval.end, businessByDay);
+      totalMaintenanceRequired += Math.max(0, windowMinutes - bookedMinutes);
     }
-
-    let maintenanceRequiredMinutes = 0;
-    if (flaggedStart && flaggedStart < rangeEnd) {
-      const flaggedWindowMinutes = businessMinutesInRange(flaggedStart, rangeEnd, businessByDay);
-      maintenanceRequiredMinutes = Math.max(0, flaggedWindowMinutes - usageMinutesDuringFlagged);
-    }
-
-    totalUsage += usageMinutes;
-    totalMaintenanceRequired += maintenanceRequiredMinutes;
   }
 
   const downtimeMinutes = Math.max(0, totalBusiness - totalUsage - totalMaintenanceRequired);

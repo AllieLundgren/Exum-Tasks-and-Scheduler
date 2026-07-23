@@ -12,7 +12,11 @@ export async function createInstrument(formData: FormData) {
   if (!name) throw new Error("Instrument name is required");
 
   await prisma.instrument.create({
-    data: { name, description: description || null },
+    data: {
+      name,
+      description: description || null,
+      statusEvents: { create: { status: "active" } },
+    },
   });
   revalidatePath("/instruments");
 }
@@ -36,7 +40,13 @@ export async function setInstrumentStatus(id: string, status: InstrumentStatus) 
   await requireSession();
   const current = await prisma.instrument.findUnique({ where: { id }, select: { status: true } });
   if (!current || current.status === status) return;
-  await prisma.instrument.update({ where: { id }, data: { status, statusSince: new Date() } });
+
+  const statusSince = new Date();
+  await prisma.$transaction([
+    prisma.instrument.update({ where: { id }, data: { status, statusSince } }),
+    prisma.instrumentStatusEvent.create({ data: { instrumentId: id, status, startedAt: statusSince } }),
+  ]);
+
   revalidatePath("/instruments");
   revalidatePath(`/instruments/${id}`);
   revalidatePath("/analytics");
